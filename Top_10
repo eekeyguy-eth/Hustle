@@ -1,0 +1,145 @@
+import pandas as pd
+import requests
+from typing import List, Dict, Any
+
+def fetch_and_analyze_top_yields(token_symbol: str, top_n: int = 10) -> List[Dict[str, Any]]:
+    """
+    Fetch yield data, filter based on token symbol and positive APY, and return top N results by TVL.
+    
+    Args:
+        token_symbol (str): Token symbol to search for (case insensitive)
+        top_n (int): Number of top results to return
+    
+    Returns:
+        List[Dict]: List of dictionaries containing filtered and sorted yield data
+    """
+    # Fetch data from API
+    url = "https://yields.llama.fi/pools"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()['data']
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return []
+
+    # Convert to DataFrame for easier manipulation
+    df = pd.DataFrame(data)
+    
+    # Filter rows where:
+    # 1. Symbol contains the token_symbol (case insensitive)
+    # 2. APY is greater than 0
+    mask = (
+        df['symbol'].str.contains(token_symbol, case=False, na=False) &
+        (df['apy'] > 0)
+    )
+    filtered_df = df[mask]
+    
+    # Sort by TVL in descending order and take top N
+    sorted_df = filtered_df.sort_values('tvlUsd', ascending=False).head(top_n)
+    
+    # Select required fields
+    required_fields = [
+        'symbol',
+        'project',
+        'chain',
+        'tvlUsd',
+        'apy',
+        'apyBase',
+        'apyMean30d'
+    ]
+    
+    result_df = sorted_df[required_fields]
+    
+    # Convert numeric values to more readable format
+    result_df['tvlUsd'] = result_df['tvlUsd'].apply(lambda x: f"${x:,.2f}")
+    result_df['apy'] = result_df['apy'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+    result_df['apyBase'] = result_df['apyBase'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+    result_df['apyMean30d'] = result_df['apyMean30d'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+    
+    return result_df.to_dict('records')
+
+def print_formatted_results(results: List[Dict[str, Any]]):
+    """
+    Print results in a formatted table using basic string formatting.
+    """
+    if not results:
+        return
+    
+    # Define column widths
+    col_widths = {
+        'rank': 4,
+        'symbol': 20,
+        'project': 20,
+        'chain': 15,
+        'tvl': 25,
+        'apy': 12,
+        'apyBase': 12,
+        'apyMean30d': 12
+    }
+    
+    # Print header
+    header = (
+        f"{'#':^{col_widths['rank']}} | "
+        f"{'Symbol':<{col_widths['symbol']}} | "
+        f"{'Project':<{col_widths['project']}} | "
+        f"{'Chain':<{col_widths['chain']}} | "
+        f"{'TVL':^{col_widths['tvl']}} | "
+        f"{'APY':^{col_widths['apy']}} | "
+        f"{'APY Base':^{col_widths['apyBase']}} | "
+        f"{'APY Mean 30d':^{col_widths['apyMean30d']}}"
+    )
+    
+    # Print separator
+    separator = '-' * len(header)
+    
+    print(separator)
+    print(header)
+    print(separator)
+    
+    # Print each row
+    for idx, pool in enumerate(results, 1):
+        row = (
+            f"{idx:^{col_widths['rank']}} | "
+            f"{pool['symbol']:<{col_widths['symbol']}} | "
+            f"{pool['project']:<{col_widths['project']}} | "
+            f"{pool['chain']:<{col_widths['chain']}} | "
+            f"{pool['tvlUsd']:>{col_widths['tvl']}} | "
+            f"{pool['apy']:^{col_widths['apy']}} | "
+            f"{pool['apyBase']:^{col_widths['apyBase']}} | "
+            f"{pool['apyMean30d']:^{col_widths['apyMean30d']}}"
+        )
+        print(row)
+    
+    print(separator)
+    print("Note: Only showing pools with APY > 0%\n")
+
+def main():
+    print("Welcome to the DeFi Yield Analyzer!")
+    print("-" * 50)
+    print("Filters applied: APY > 0%")
+    print("-" * 50)
+    
+    while True:
+        # Get token input from user
+        token = input("\nEnter the token symbol to search for (or 'quit' to exit): ").strip()
+        
+        if token.lower() == 'quit':
+            print("\nThank you for using DeFi Yield Analyzer!")
+            break
+        
+        if not token:
+            print("Please enter a valid token symbol.")
+            continue
+        
+        print(f"\nFetching top 10 pools containing '{token}' by TVL (with APY > 0%)...")
+        results = fetch_and_analyze_top_yields(token)
+        
+        if not results:
+            print(f"No pools found containing '{token}' in symbol with APY > 0%")
+            continue
+        
+        print_formatted_results(results)
+
+if __name__ == "__main__":
+    main()
